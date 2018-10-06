@@ -46,7 +46,7 @@ github.repos.getForOrg({
     return;
   }
   async.each(repos, function(repo, cb){
-    github.repos.getContributors({ owner: organizationName, repo: repo.name, per_page: 100 }, function(err, contributors){
+    github.repos.getContributors({ owner: organizationName, repo: repo.name, per_page: 100, anon=true }, function(err, contributors){
       getContributors(err, contributors, repo, cb);
     });
   }, function(err){
@@ -90,15 +90,27 @@ function getContributors(err, res, repo, callback){
     callback(err);
     return
   } else {
-    console.log('Processing the '+res.length+' contributors to '+repo.name);
+    console.log('Processing '+res.length+' contributors to '+repo.name);
     async.each(res, function(contributor, cb){
-      if(!usersMap[contributor.login]) {
-        usersMap[contributor.login] = {
+      let login;
+      if (contributor.type == 'User')
+      {
+        login = contributor.login
+      }
+      else
+      {
+        // If contributor.type == 'Anonymous'
+        // Try to find its login
+        // Try finding it by name
+        github.getForUser
+      }
+      if(!usersMap[login]) {
+        usersMap[login] = {
           counts: {},
-          info: {login: contributor.login, id: contributor.id}
+          info: {login: login, id: contributor.id}
         };
       }
-      usersMap[contributor.login].counts[repo.name] = contributor.contributions;
+      usersMap[login].counts[repo.name] = contributor.contributions;
       cb(null);
     }, function(){
       if (github.hasNextPage(res)) {
