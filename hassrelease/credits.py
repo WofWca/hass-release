@@ -1,13 +1,5 @@
-import subprocess
-import sys
+from .github import get_session
 
 
 def generate_credits():
-    process = subprocess.run(
-        "node update_credits.js",
-        shell=True,
-        cwd="credits_generator"
-    )
-    if process.returncode != 0:
-        sys.stderr.write("Error generating credits file\n")
-        sys.exit(1)
+    gh = get_session()
