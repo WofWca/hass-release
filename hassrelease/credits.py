@@ -2,15 +2,24 @@ from .github import get_session
 from .const import GITHUB_ORGANIZATION_NAME
 from threading import Thread
 from collections import defaultdict
-from github3 import structs
+from github3 import GitHub
+from github3.repos.repo import Repository
 
 
-def __process_contributors(repository: structs.GitHubIterator,
-                           num_contributions_dict: defaultdict):
+class ContributorData:
+    def __init__(self, name):
+        self.name = name
+        self.num_contributions = 0
+
+
+def __process_contributors(gh: GitHub,
+                           repository: Repository,
+                           contributors_data_dict: defaultdict):
     """
     Calculates the number of contributions made to the repository by each user
+    :param gh: A GitHub session.
     :param repository: The repository to which contributions were made.
-    :param num_contributions_dict: An assumingly empty dictionary to which
+    :param contributors_data_dict: An assumingly empty dictionary to which
     the resulting data needs to be output.
     :return:
     """
@@ -30,18 +39,45 @@ def __process_contributors(repository: structs.GitHubIterator,
     # contributions this user made, and further in the list we may
     # find anonymous entries, which must be also associated with this user.
     for contributor in contributors:
-        # If the contributor's data is not anonymous (we know his login)
         if contributor.type == 'User':
-            num_contributions_dict[contributor.login] +=\
-                contributor.contributions
-        # If the contributor's data is anonymous (we only know his email and
-        # his name.
+            # A non-anonymous contributor entry can only be seen once in one
+            # repository, there's no need to check if the user is already in
+            # the dictionary.
+            # Get the user's name, if he has one.  Else use login.
+            contributor_name = gh.user(contributor.login).name or \
+                               contributor.login
+            # Initialize contributor's data structure.
+            contributor_data = ContributorData(contributor_name)
+            contributor_data.num_contributions = contributor.contributions
+            # Associate the contributor's login with it.
+            contributors_data_dict[contributor.login] = contributor_data
+        # If the contributor's data is anonymous (we only know his email, name,
+        # and the number of contributions he made).
         else:
-            # Gotta count commits authored by this email's user and get the
-            # user data by that commit.
-            repository.
-
-
+            # Gotta find a commit authored by this email's user and extract
+            # his login from it.
+            commit = next(repository.commits(author=contributor.email,
+                                             number=1))
+            contributor_login = commit.author.login
+            # We can also get the user's name right from a commit.
+            contributor_name = commit.commit.author['name']
+            # As was said, if the user has committed to the repository using
+            # several emails, he may have already been seen.
+            # Obtain the data associated with this login, if there is any.
+            contributor_data = contributors_data_dict[contributor_login]
+            # If there is none
+            if contributor_data is None:
+                # Initialize contributor's data structure.
+                contributor_data = ContributorData(contributor_name)
+                contributor_data.num_contributions = contributor.contributions
+                # Associate the contributor's login with it.
+                contributors_data_dict[contributor_login] = contributor_data
+            # We've found an anonymous contributor entry that belongs to an
+            # already listed non-anonymous contributor.
+            else:
+                # Incrementing his contributions counter.
+                contributors_data_dict[contributor_login].num_contributions +=\
+                    contributor.contributions
 
 
 def generate_credits():
@@ -58,7 +94,7 @@ def generate_credits():
     # A dictionary with the following structure:
     # {
     #     <repository_name>: {
-    #         <user_login>: <number_of_contributions_by_this_user_to_this_repo>
+    #         <user_login>: <ContributorData instance>
     #         ...
     #     }
     #     ...
@@ -67,12 +103,13 @@ def generate_credits():
     for repo in repos:
         # The dictionary associated to the current repo. Associates users
         # with the number of contributions they made to this repo.
-        curr_repo_num_contributions_dict = defaultdict(int)
-        credits_dict[repo.name] = curr_repo_num_contributions_dict
+        curr_repo_contributors_data_dict = {}
+        credits_dict[repo.name] = curr_repo_contributors_data_dict
         repo_threads[repo.name] = Thread(
             target=__process_contributors,
-            args=(repo, curr_repo_num_contributions_dict)
+            args=(gh, repo, curr_repo_contributors_data_dict)
         )
         repo_threads[repo.name].start()
     for repo_thread in repo_threads:
-        repo_thread.join()
+        repo_thread.join(100)
+    1+1
