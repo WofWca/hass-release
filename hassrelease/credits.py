@@ -37,7 +37,7 @@ class RequestTask:
     1. Access GitHub API to get corresponding data.
     2. Handle obtained data.
     """
-    def __init__(self, url: str, params: dict=None):
+    def __init__(self, url: str, **params):
         """
         :param url: API URL to be requested.
         :param params: Request's query string parameters.
@@ -58,6 +58,9 @@ class RequestTask:
 
 
 class ReposPageTask(RequestTask):
+    def __init__(self, repos_page_url: str, **params):
+        super(ReposPageTask, self).__init__(repos_page_url, **params)
+
     def handle(self):
         """
         For each repo enqueue a ContributorsPageTask. If this repos page
@@ -72,19 +75,17 @@ class ReposPageTask(RequestTask):
         for repo in self.response.json():
             new_task = ContributorsPageTask(repo['contributors_url'],
                                             repo,
-                                            params={
-                                                'anon': True,
-                                                'per_page': default_per_page
-                                            })
+                                            anon=True,
+                                            per_page=default_per_page)
             requests_tasks.put(new_task)
 
 
 class ContributorsPageTask(RequestTask):
-    def __init__(self, url: str, repo: dict, params: dict=None):
+    def __init__(self, contributors_page_url: str, repo: dict, **params):
         """
         :param repo: The repository, whose contributors are to process.
         """
-        super().__init__(url, params)
+        super().__init__(contributors_page_url, **params)
         self.repo = repo
 
     def handle(self):
@@ -119,7 +120,7 @@ class ContributorsPageTask(RequestTask):
             if contr['type'] == 'User':
                 if contr['login'] not in name_by_login:
                     # Requesting contributor's profile page to know his name.
-                    new_task = ResolveNameByLoginTask(contr['url'])
+                    new_task = ResolveNameByProfile(contr['url'])
                     requests_tasks.put(new_task)
                 org_contributors_dict[contr['login']][self.repo['name']] = \
                     contr['contributions']
@@ -136,11 +137,7 @@ class ContributorsPageTask(RequestTask):
                     # Removing the last 6.
                     commits_url = self.repo['commits_url'][:-6]
                     # Get contributor's login and name by a commit he made.
-                    new_task = HandleAnonTask(commits_url, contr, self.repo,
-                                              params={
-                                                  'author': contr['email'],
-                                                  'per_page': 1
-                                              })
+                    new_task = HandleAnonTask(commits_url, contr, self.repo)
                     requests_tasks.put(new_task)
                 else:
                     contributions_already = \
@@ -153,14 +150,17 @@ class ContributorsPageTask(RequestTask):
                             contr['contributions']
 
 
-class ResolveNameByLoginTask(RequestTask):
+class ResolveNameByProfile(RequestTask):
     """A task to get user's name by accessing his GitHub profile."""
+    def __init__(self, profile_url):
+        super(ResolveNameByProfile, self).__init__(profile_url)
+
     def handle(self):
         """
         Add user's name to the name_by_login dict. If the user has not
         specified his name, use the login as the name.
         """
-        super(ResolveNameByLoginTask, self).handle()
+        super(ResolveNameByProfile, self).handle()
         user = self.response.json()
         # If the user has not specified the name, use his login
         name_by_login[user['login']] = user['name'] or user['login']
@@ -168,9 +168,9 @@ class ResolveNameByLoginTask(RequestTask):
 
 class HandleAnonTask(RequestTask):
     """A task to handle an anonymous contributor entry."""
-    def __init__(self, url: str, contributor: dict, repo: dict,
-                 params: dict=None):
-        super().__init__(url, params)
+    def __init__(self, repo_commits_url: str, contributor: dict, repo: dict):
+        super().__init__(repo_commits_url, author=contributor['email'],
+                         per_page=1)
         self.contributor = contributor
         self.repo = repo
 
